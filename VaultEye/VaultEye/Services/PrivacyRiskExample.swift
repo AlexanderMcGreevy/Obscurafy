@@ -7,11 +7,24 @@ enum PrivacyRiskExample {
             Detection(type: "id_card", confidence: 0.91)
         ]
 
-        let scoreService = ScoreService()
-        let riskResult = scoreService.computeRiskResult(for: detections)
+        let flagger = SensitiveContentFlagger()
+        let flagResult = flagger.flagSensitiveDetections(in: detections, threshold: 0.6)
+
+        guard flagResult.isSensitive else {
+            print("No sensitive content detected. Skipping Gemini call.")
+            return
+        }
+
+        let ocrText = """
+        United States of America
+        Passport
+        Passport No. 123456789
+        Doe, Jane Marie
+        Date of Birth 04 Jan 1990
+        """
 
         let geminiService = GeminiService(apiKey: "YOUR_GEMINI_API_KEY")
-        geminiService.generateExplanation(for: riskResult) { result in
+        geminiService.generateExplanation(ocrText: ocrText, detections: flagResult.detections) { result in
             switch result {
             case .success(let explanation):
                 print("Gemini JSON response:\n\(explanation)")

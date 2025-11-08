@@ -10,7 +10,7 @@ final class GeminiService {
         self.session = session
     }
 
-    func generateExplanation(for riskResult: RiskResult, completion: @escaping (Result<String, Error>) -> Void) {
+    func generateExplanation(ocrText: String, detections: [Detection], completion: @escaping (Result<String, Error>) -> Void) {
         guard var components = URLComponents(string: endpoint) else {
             completion(.failure(GeminiServiceError.invalidURL))
             return
@@ -26,12 +26,15 @@ final class GeminiService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let prompt = buildPrompt(for: riskResult)
-        let body = GenerateContentRequest(contents: [
-            GenerateContentRequest.Content(parts: [
-                GenerateContentRequest.Content.Part(text: prompt)
-            ])
-        ])
+        let prompt = buildPrompt(ocrText: ocrText, detections: detections)
+        let body = GenerateContentRequest(
+            contents: [
+                GenerateContentRequest.Content(parts: [
+                    GenerateContentRequest.Content.Part(text: prompt)
+                ])
+            ],
+            generationConfig: .init(responseMimeType: "application/json")
+        )
 
         do {
             request.httpBody = try JSONEncoder().encode(body)
@@ -58,14 +61,19 @@ final class GeminiService {
 
             do {
                 let decoded = try JSONDecoder().decode(GenerateContentResponse.self, from: data)
-                guard let explanation = decoded.primaryText else {
+                guard let rawJSON = decoded.primaryText else {
                     completion(.failure(GeminiServiceError.missingContent))
                     return
                 }
 
-                let payload = GeminiExplanationPayload(globalScore: riskResult.globalScore,
-                                                       entities: riskResult.entities,
-                                                       explanation: explanation)
+                let analysisData = Data(rawJSON.utf8)
+                let analysis = try JSONDecoder().decode(GeminiAnalysisPayload.self, from: analysisData)
+
+                let payload = GeminiFrontendPayload(
+                    detections: detections,
+                    ocrTextSnippet: Self.snippet(from: ocrText),
+                    analysis: analysis
+                )
 
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -77,18 +85,41 @@ final class GeminiService {
                 }
 
                 completion(.success(jsonString))
+            } catch let decodingError as DecodingError {
+                completion(.failure(GeminiServiceError.invalidJSON))
             } catch {
                 completion(.failure(error))
             }
         }.resume()
     }
 
-    private func buildPrompt(for riskResult: RiskResult) -> String {
-        let entityStrings = riskResult.entities
-            .map { "\($0.type) (risk score: \($0.score))" }
+    private func buildPrompt(ocrText: String, detections: [Detection]) -> String {
+        let formattedDetections = detections
+            .map { "\($0.type) (confidence: \(String(format: "%.2f", $0.confidence)))" }
             .joined(separator: ", ")
 
-        return "You are a privacy assistant on a mobile device. You receive only metadata about an image: a global risk score and a list of entities with risk scores. You never see the image or raw text. Based on the metadata, explain in 1–2 sentences why this image might expose personal identity information. Do not invent card numbers or personal details. Global risk score: \(riskResult.globalScore). Entities: \(entityStrings)."
+        return """
+        You are a privacy assistant running entirely on device. You receive sanitized OCR text and detection metadata that indicate potential exposure of personal identity information. Detect any privacy risks present in the text, without inventing numbers or details that are not present. Use the detection metadata as hints only.
+
+        Detections: [\(formattedDetections)]
+        OCR Text: """
+        \(ocrText)
+        """
+
+        Respond strictly as minified JSON with the following keys:
+        - "explanation": short string describing the risk.
+        - "risk_level": one of "low", "medium", or "high".
+        - "key_phrases": array of strings highlighting risky fragments taken verbatim from the provided text.
+        - "recommended_actions": array of short action items to mitigate exposure.
+
+        Do not include personal identifiers that are not already in the OCR text. Do not add any additional fields.
+        """
+    }
+
+    private static func snippet(from text: String, limit: Int = 200) -> String {
+        guard text.count > limit else { return text }
+        let index = text.index(text.startIndex, offsetBy: limit)
+        return "\(text[..<index])…"
     }
 }
 
@@ -98,28 +129,26 @@ private enum GeminiServiceError: Error {
     case emptyResponse
     case missingContent
     case encodingFailure
-}
-
-private struct GeminiExplanationPayload: Codable {
-    let entities: [EntityRisk]
-    let explanation: String
-    let globalScore: Int
-
-    init(globalScore: Int, entities: [EntityRisk], explanation: String) {
-        self.globalScore = globalScore
-        self.entities = entities
-        self.explanation = explanation
-    }
+    case invalidJSON
 }
 
 private struct GenerateContentRequest: Codable {
     let contents: [Content]
+    let generationConfig: GenerationConfig?
 
     struct Content: Codable {
         let parts: [Part]
 
         struct Part: Codable {
             let text: String
+        }
+    }
+
+    struct GenerationConfig: Codable {
+        let responseMimeType: String?
+
+        init(responseMimeType: String?) {
+            self.responseMimeType = responseMimeType
         }
     }
 }
@@ -143,5 +172,31 @@ private struct GenerateContentResponse: Codable {
         candidates?.compactMap { candidate in
             candidate.content?.parts?.compactMap { $0.text }.joined(separator: " ")
         }.first { !$0.isEmpty }
+    }
+}
+
+private struct GeminiAnalysisPayload: Codable {
+    let explanation: String
+    let riskLevel: String
+    let keyPhrases: [String]
+    let recommendedActions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case explanation
+        case riskLevel = "risk_level"
+        case keyPhrases = "key_phrases"
+        case recommendedActions = "recommended_actions"
+    }
+}
+
+private struct GeminiFrontendPayload: Codable {
+    let analysis: GeminiAnalysisPayload
+    let detections: [Detection]
+    let ocrTextSnippet: String
+
+    enum CodingKeys: String, CodingKey {
+        case analysis
+        case detections
+        case ocrTextSnippet = "ocr_text_snippet"
     }
 }

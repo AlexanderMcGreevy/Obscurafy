@@ -5,12 +5,7 @@ struct Detection: Hashable, Codable {
     let confidence: Double
 }
 
-struct EntityRisk: Hashable, Codable {
-    let type: String
-    let score: Int
-}
-
-struct RiskResult: Hashable, Codable {
-    let globalScore: Int
-    let entities: [EntityRisk]
+struct SensitiveFlagResult: Hashable, Codable {
+    let isSensitive: Bool
+    let detections: [Detection]
 }

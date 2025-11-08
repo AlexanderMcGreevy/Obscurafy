@@ -1,26 +1,17 @@
 import Foundation
 
-final class ScoreService {
-    private let baseWeights: [String: Double] = [
-        "passport": 85,
-        "id_card": 70
+final class SensitiveContentFlagger {
+    private let sensitiveTypes: Set<String> = [
+        "passport",
+        "id_card"
     ]
 
-    func computeRiskResult(for detections: [Detection]) -> RiskResult {
-        var entityRisks: [EntityRisk] = []
-
-        for detection in detections {
-            let baseWeight = baseWeights[detection.type, default: 0]
-            let rawScore = baseWeight * detection.confidence
-            let clampedScore = max(0, min(100, Int(rawScore.rounded())))
-            entityRisks.append(EntityRisk(type: detection.type, score: clampedScore))
+    /// Flags content when any sensitive type crosses the confidence threshold.
+    func flagSensitiveDetections(in detections: [Detection], threshold: Double = 0.6) -> SensitiveFlagResult {
+        let matched = detections.filter { detection in
+            sensitiveTypes.contains(detection.type) && detection.confidence >= threshold
         }
 
-        let maxScore = entityRisks.map { $0.score }.max() ?? 0
-        let sensitiveCount = entityRisks.filter { baseWeights.keys.contains($0.type) && $0.score > 0 }.count
-        let bump = sensitiveCount > 1 ? 5 : 0
-        let globalScore = max(0, min(100, maxScore + bump))
-
-        return RiskResult(globalScore: globalScore, entities: entityRisks)
+        return SensitiveFlagResult(isSensitive: !matched.isEmpty, detections: matched)
     }
 }
