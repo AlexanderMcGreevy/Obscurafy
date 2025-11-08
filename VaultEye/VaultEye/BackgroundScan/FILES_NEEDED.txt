@@ -1,0 +1,15 @@
+The following 8 Swift files need to be created in this directory:
+
+1. ResultStore.swift
+2. ImageClassifier.swift  
+3. PhotoAccess.swift
+4. NotificationHelper.swift
+5. BGTasks.swift
+6. BackgroundScanManager.swift
+7. SelectedImagesView.swift
+8. ScanScreen.swift
+
+These files were defined earlier in the conversation but the Write tool 
+encountered issues creating them.
+
+Please use the Write tool to recreate each file individually.

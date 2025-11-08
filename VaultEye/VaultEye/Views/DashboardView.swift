@@ -2,137 +2,186 @@ import SwiftUI
 import Charts
 
 struct DashboardView: View {
-    @StateObject private var vm = DashboardViewModel() // swap with injected VM later
+    @StateObject private var vm: DashboardViewModel
     @State private var timeframe: DashboardViewModel.Timeframe = .last15Days
+
+    init(activityTracker: ActivityTracker) {
+        _vm = StateObject(wrappedValue: DashboardViewModel(activityTracker: activityTracker))
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Top summary cards
-                HStack(spacing: 12) {
-                    summaryCard(title: "Scanned", value: "\(vm.stats.totalScanned)", color: .blue, systemIcon: "photo.on.rectangle")
-                    summaryCard(title: "Flagged", value: "\(vm.stats.flagged)", color: .red, systemIcon: "exclamationmark.triangle")
-                    protectedCard()
-                }
-                .padding(.horizontal)
-
-                // Chart with toggle
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Flagged Photos")
-                            .font(.headline)
-                        Spacer()
-                        Picker("", selection: $timeframe) {
-                            Text("15d").tag(DashboardViewModel.Timeframe.last15Days)
-                            Text("30d").tag(DashboardViewModel.Timeframe.last30Days)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 140)
-                        .onChange(of: timeframe) { _ in vm.updateSeries(for: timeframe) }
-                    }
-
-                    Chart {
-                        ForEach(vm.series) { point in
-                            BarMark(
-                                x: .value("Day", point.date, unit: .day),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(LinearGradient(colors: [.red.opacity(0.9), .red.opacity(0.5)], startPoint: .top, endPoint: .bottom))
-                            LineMark(
-                                x: .value("Day", point.date, unit: .day),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(.purple)
-                            .lineStyle(.init(lineWidth: 2))
-                        }
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: .day, count: vm.stride(for: timeframe))) { _ in
-                            AxisGridLine()
-                            AxisTick()
-                            AxisValueLabel(format: .dateTime.month().day())
-                        }
-                    }
-                    .frame(height: 220)
-                    .padding(.horizontal)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .animation(.easeInOut, value: vm.series)
-                }
-                .padding(.horizontal)
-
-                // Protected Info list & impact summary
-                VStack(spacing: 12) {
-                    HStack {
-                        Text("Protected Info")
-                            .font(.headline)
-                        Spacer()
-                        Text("This month")
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                    }
-                    .padding(.horizontal)
-
-                    // Categories
-                    VStack(spacing: 8) {
-                        ForEach(vm.categories) { cat in
-                            HStack {
-                                Label {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(cat.title)
-                                            .font(.subheadline)
-                                        Text("\(cat.count) items")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                } icon: {
-                                    Image(systemName: cat.systemIcon)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 28, height: 28)
-                                        .foregroundStyle(cat.color)
-                                        .padding(8)
-                                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                                }
-                                Spacer()
-                                // small progress indicator
-                                ProgressView(value: min(Double(cat.count) / max(1, Double(vm.stats.flagged)), 1.0))
-                                    .progressViewStyle(LinearProgressViewStyle(tint: cat.color))
-                                    .frame(width: 120)
-                            }
-                            .padding(.horizontal)
-                            .padding(.vertical, 6)
-                        }
-                    }
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-
-                    // Impact summary
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Impact")
-                                .font(.headline)
-                            Text("Protected personal data this month")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("\(vm.monthlyImpact.protectedItems) items")
-                                .font(.title3.bold())
-                            Text("~\(vm.monthlyImpact.estimatedRiskReduction)% risk reduced")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding()
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-                }
+                summaryCardsSection
+                chartSection
+                protectedInfoSection
             }
             .padding(.vertical)
         }
         .navigationTitle("VaultEye")
-        .onAppear { vm.updateSeries(for: timeframe) }
+        .onAppear {
+            vm.refresh()
+            vm.updateSeries(for: timeframe)
+        }
+    }
+
+    // MARK: - Main Sections
+
+    private var summaryCardsSection: some View {
+        HStack(spacing: 12) {
+            summaryCard(title: "Scanned", value: "\(vm.stats.totalScanned)", color: .blue, systemIcon: "photo.on.rectangle")
+            summaryCard(title: "Flagged", value: "\(vm.stats.flagged)", color: .red, systemIcon: "exclamationmark.triangle")
+            protectedCard()
+        }
+        .padding(.horizontal)
+    }
+
+    private var chartSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            chartHeader
+            chartView
+        }
+        .padding(.horizontal)
+    }
+
+    private var chartHeader: some View {
+        HStack {
+            Text("Flagged Photos")
+                .font(.headline)
+            Spacer()
+            Picker("", selection: $timeframe) {
+                Text("15d").tag(DashboardViewModel.Timeframe.last15Days)
+                Text("30d").tag(DashboardViewModel.Timeframe.last30Days)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 140)
+            .onChange(of: timeframe) { oldValue, newValue in
+                vm.updateSeries(for: newValue)
+            }
+        }
+    }
+
+    private var chartView: some View {
+        Chart {
+            ForEach(vm.series) { point in
+                BarMark(
+                    x: .value("Day", point.date, unit: .day),
+                    y: .value("Count", point.count)
+                )
+                .foregroundStyle(barGradient)
+
+                LineMark(
+                    x: .value("Day", point.date, unit: .day),
+                    y: .value("Count", point.count)
+                )
+                .foregroundStyle(.purple)
+                .lineStyle(.init(lineWidth: 2))
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: vm.stride(for: timeframe))) { _ in
+                AxisGridLine()
+                AxisTick()
+                AxisValueLabel(format: .dateTime.month().day())
+            }
+        }
+        .frame(height: 220)
+        .padding(.horizontal)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .animation(.easeInOut, value: vm.series)
+    }
+
+    private var barGradient: LinearGradient {
+        LinearGradient(
+            colors: [.red.opacity(0.9), .red.opacity(0.5)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var protectedInfoSection: some View {
+        VStack(spacing: 12) {
+            protectedInfoHeader
+            categoriesList
+            impactSummary
+        }
+    }
+
+    private var protectedInfoHeader: some View {
+        HStack {
+            Text("Protected Info")
+                .font(.headline)
+            Spacer()
+            Text("This month")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+        }
+        .padding(.horizontal)
+    }
+
+    private var categoriesList: some View {
+        VStack(spacing: 8) {
+            ForEach(vm.categories) { cat in
+                categoryRow(cat)
+            }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+
+    private func categoryRow(_ cat: SensitiveCategory) -> some View {
+        HStack {
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(cat.title)
+                        .font(.subheadline)
+                    Text("\(cat.count) items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } icon: {
+                Image(systemName: cat.systemIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(cat.color)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+            Spacer()
+            ProgressView(value: categoryProgress(cat))
+                .progressViewStyle(LinearProgressViewStyle(tint: cat.color))
+                .frame(width: 120)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+    }
+
+    private func categoryProgress(_ cat: SensitiveCategory) -> Double {
+        min(Double(cat.count) / max(1, Double(vm.stats.flagged)), 1.0)
+    }
+
+    private var impactSummary: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text("Impact")
+                    .font(.headline)
+                Text("Protected personal data this month")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing) {
+                Text("\(vm.monthlyImpact.protectedItems) items")
+                    .font(.title3.bold())
+                Text("~\(vm.monthlyImpact.estimatedRiskReduction)% risk reduced")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
     }
 
     // MARK: - Subviews
@@ -184,10 +233,11 @@ struct DashboardView: View {
 }
 
 // MARK: - Preview
-struct DashboardView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            DashboardView()
-        }
+#Preview("Dashboard") {
+    let tracker = ActivityTracker()
+    tracker.addMockData()
+
+    return NavigationStack {
+        DashboardView(activityTracker: tracker)
     }
 }

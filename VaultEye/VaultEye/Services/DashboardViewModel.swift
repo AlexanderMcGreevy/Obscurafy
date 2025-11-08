@@ -1,11 +1,16 @@
 import Foundation
 import SwiftUI
+import Combine
 
 // Simple model for chart points
-struct DayPoint: Identifiable {
+struct DayPoint: Identifiable, Equatable {
     let id = UUID()
     let date: Date
     let count: Int
+
+    static func == (lhs: DayPoint, rhs: DayPoint) -> Bool {
+        lhs.id == rhs.id && lhs.date == rhs.date && lhs.count == rhs.count
+    }
 }
 
 // Summary stats
@@ -40,23 +45,42 @@ final class DashboardViewModel: ObservableObject {
     @Published var series: [DayPoint] = []
     @Published var monthlyImpact: ImpactSummary
 
-    // internal mock source
+    // internal data source
+    private let activityTracker: ActivityTracker
     private var allDays: [DayPoint] = []
 
-    init() {
-        // Generate mock stats and categories
-        self.stats = ScanStats(totalScanned: 4820, flagged: 142, protectedPercentage: 78.0)
-        self.categories = [
-            SensitiveCategory(title: "ID Cards", count: 48, systemIcon: "idcard", color: .blue),
-            SensitiveCategory(title: "Credit Cards", count: 32, systemIcon: "creditcard", color: .indigo),
-            SensitiveCategory(title: "Personal Docs", count: 36, systemIcon: "doc.text", color: .teal),
-            SensitiveCategory(title: "Photos of People", count: 26, systemIcon: "person.crop.rectangle", color: .pink)
-        ]
-        self.monthlyImpact = ImpactSummary(protectedItems: 97, estimatedRiskReduction: 42)
+    init(activityTracker: ActivityTracker) {
+        self.activityTracker = activityTracker
 
-        // Build mock daily series for last 30 days
-        allDays = Self.mockSeries(days: 30)
-        self.series = Array(allDays.suffix(15)) // default last 15
+        // Initialize with real data from tracker
+        let totalScanned = activityTracker.getTotalScanned()
+        let totalFlagged = activityTracker.getTotalFlagged()
+        let protectedPercentage = activityTracker.getProtectedPercentage()
+
+        self.stats = ScanStats(
+            totalScanned: totalScanned > 0 ? totalScanned : 0,
+            flagged: totalFlagged > 0 ? totalFlagged : 0,
+            protectedPercentage: protectedPercentage
+        )
+
+        // Monthly impact
+        let monthlyProtected = activityTracker.getMonthlyProtectedItems()
+        let riskReduction = monthlyProtected > 0 ? min(Int(Double(monthlyProtected) / Double(max(1, totalScanned)) * 100), 100) : 0
+        self.monthlyImpact = ImpactSummary(
+            protectedItems: monthlyProtected,
+            estimatedRiskReduction: riskReduction
+        )
+
+        // Initialize empty arrays - will be filled after init
+        self.categories = []
+        self.allDays = []
+        self.series = []
+
+        // Now build the data (after all properties are initialized)
+        let categoryCounts = activityTracker.getCategoryCounts()
+        self.categories = Self.buildCategories(from: categoryCounts)
+        self.allDays = Self.buildDailySeries(from: activityTracker, days: 30)
+        self.series = Array(allDays.suffix(15))
     }
 
     // called when timeframe changes
@@ -67,6 +91,98 @@ final class DashboardViewModel: ObservableObject {
         case .last30Days:
             series = allDays
         }
+    }
+
+    func refresh() {
+        // Refresh stats from tracker
+        let totalScanned = activityTracker.getTotalScanned()
+        let totalFlagged = activityTracker.getTotalFlagged()
+        let protectedPercentage = activityTracker.getProtectedPercentage()
+
+        self.stats = ScanStats(
+            totalScanned: totalScanned,
+            flagged: totalFlagged,
+            protectedPercentage: protectedPercentage
+        )
+
+        // Refresh categories
+        let categoryCounts = activityTracker.getCategoryCounts()
+        self.categories = Self.buildCategories(from: categoryCounts)
+
+        // Refresh monthly impact
+        let monthlyProtected = activityTracker.getMonthlyProtectedItems()
+        let riskReduction = monthlyProtected > 0 ? min(Int(Double(monthlyProtected) / Double(max(1, totalScanned)) * 100), 100) : 0
+        self.monthlyImpact = ImpactSummary(
+            protectedItems: monthlyProtected,
+            estimatedRiskReduction: riskReduction
+        )
+
+        // Refresh daily series
+        allDays = Self.buildDailySeries(from: activityTracker, days: 30)
+        series = Array(allDays.suffix(15))
+    }
+
+    private static func buildDailySeries(from tracker: ActivityTracker, days: Int) -> [DayPoint] {
+        let dailyCounts = tracker.getDailyFlaggedCounts(days: days)
+        return dailyCounts.map { DayPoint(date: $0.0, count: $0.1) }
+    }
+
+    private static func buildCategories(from counts: [String: Int]) -> [SensitiveCategory] {
+        // Map detection types to categories with icons
+        var categories: [SensitiveCategory] = []
+
+        // Credit Card is hardcoded as primary for now
+        if let creditCardCount = counts["Credit Card"] {
+            categories.append(
+                SensitiveCategory(
+                    title: "Credit Cards",
+                    count: creditCardCount,
+                    systemIcon: "creditcard",
+                    color: .indigo
+                )
+            )
+        }
+
+        // Add other types that exist in data
+        for (type, count) in counts where type != "Credit Card" {
+            let icon: String
+            let color: Color
+
+            switch type {
+            case "ID Card":
+                icon = "idcard"
+                color = .blue
+            case "Personal Document":
+                icon = "doc.text"
+                color = .teal
+            default:
+                icon = "exclamationmark.shield"
+                color = .orange
+            }
+
+            categories.append(
+                SensitiveCategory(
+                    title: type + "s",
+                    count: count,
+                    systemIcon: icon,
+                    color: color
+                )
+            )
+        }
+
+        // If no data yet, show placeholder
+        if categories.isEmpty {
+            categories.append(
+                SensitiveCategory(
+                    title: "Credit Cards",
+                    count: 0,
+                    systemIcon: "creditcard",
+                    color: .indigo
+                )
+            )
+        }
+
+        return categories.sorted { $0.count > $1.count }
     }
 
     func stride(for timeframe: Timeframe) -> Int {
