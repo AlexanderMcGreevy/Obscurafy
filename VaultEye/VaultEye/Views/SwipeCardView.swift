@@ -40,42 +40,46 @@ struct SwipeCardView<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .center) {
-                // Background glows - full height from edge
+            ZStack(alignment: .top) {
+                // Background glows - tall half capsules extending to bottom
                 // Left edge - green (keep)
                 if offset < 0 {
-                    HStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                Color.green.opacity(progress * 0.7),
-                                Color.green.opacity(0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: 150)
-                        Spacer()
-                    }
-                    .frame(height: geometry.size.height)
-                    .ignoresSafeArea()
+                    LinearGradient(
+                        colors: [
+                            Color.green.opacity(progress * 0.7),
+                            Color.green.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 150)
+                    .mask(
+                        Capsule()
+                            .frame(width: 300, height: geometry.size.height)
+                            .offset(x: -150) // Shift left so only right half is visible
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
                 }
 
                 // Right edge - red (delete)
                 if offset > 0 {
-                    HStack(spacing: 0) {
-                        Spacer()
-                        LinearGradient(
-                            colors: [
-                                Color.red.opacity(0),
-                                Color.red.opacity(progress * 0.7)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: 150)
-                    }
-                    .frame(height: geometry.size.height)
-                    .ignoresSafeArea()
+                    LinearGradient(
+                        colors: [
+                            Color.red.opacity(0),
+                            Color.red.opacity(progress * 0.7)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 150)
+                    .mask(
+                        Capsule()
+                            .frame(width: 300, height: geometry.size.height)
+                            .offset(x: 150) // Shift right so only left half is visible
+                    )
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .allowsHitTesting(false)
                 }
 
                 // Card content - follows drag continuously with NO animation on offset
@@ -273,4 +277,21 @@ private struct BoundingBoxOverlay: View {
             .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
     }
+}
+
+
+#Preview("Swipe Card - Flagged") {
+    SwipeCardView(
+        content: { DetectionResultCard(result: .mockFlagged) },
+        onDelete: { print("Deleted") },
+        onKeep: { print("Kept") }
+    )
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .ignoresSafeArea()        // apply at the top level
+}
+
+
+#Preview("Detection Result Card Only") {
+    DetectionResultCard(result: DetectionResult.mockFlagged)
+        .padding()
 }
