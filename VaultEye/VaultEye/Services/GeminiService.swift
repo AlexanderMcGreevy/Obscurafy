@@ -1,6 +1,10 @@
 import Foundation
 
-final class GeminiService {
+protocol GeminiAnalyzing {
+    func generateAnalysis(ocrText: String, detections: [Detection]) async throws -> SensitiveAnalysisResult
+}
+
+final class GeminiService: GeminiAnalyzing {
     private let apiKey: String
     private let session: URLSession
     private let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
@@ -10,16 +14,14 @@ final class GeminiService {
         self.session = session
     }
 
-    func generateExplanation(ocrText: String, detections: [Detection], completion: @escaping (Result<String, Error>) -> Void) {
+    func generateAnalysis(ocrText: String, detections: [Detection]) async throws -> SensitiveAnalysisResult {
         guard var components = URLComponents(string: endpoint) else {
-            completion(.failure(GeminiServiceError.invalidURL))
-            return
+            throw GeminiServiceError.invalidURL
         }
         components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
 
         guard let url = components.url else {
-            completion(.failure(GeminiServiceError.invalidURL))
-            return
+            throw GeminiServiceError.invalidURL
         }
 
         var request = URLRequest(url: url)
@@ -36,61 +38,22 @@ final class GeminiService {
             generationConfig: .init(responseMimeType: "application/json")
         )
 
-        do {
-            request.httpBody = try JSONEncoder().encode(body)
-        } catch {
-            completion(.failure(error))
-            return
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw GeminiServiceError.invalidResponse
         }
 
-        session.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
+        let decoded = try JSONDecoder().decode(GenerateContentResponse.self, from: data)
+        guard let rawJSON = decoded.primaryText else {
+            throw GeminiServiceError.missingContent
+        }
 
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                completion(.failure(GeminiServiceError.invalidResponse))
-                return
-            }
-
-            guard let data = data else {
-                completion(.failure(GeminiServiceError.emptyResponse))
-                return
-            }
-
-            do {
-                let decoded = try JSONDecoder().decode(GenerateContentResponse.self, from: data)
-                guard let rawJSON = decoded.primaryText else {
-                    completion(.failure(GeminiServiceError.missingContent))
-                    return
-                }
-
-                let analysisData = Data(rawJSON.utf8)
-                let analysis = try JSONDecoder().decode(GeminiAnalysisPayload.self, from: analysisData)
-
-                let payload = GeminiFrontendPayload(
-                    detections: detections,
-                    ocrTextSnippet: Self.snippet(from: ocrText),
-                    analysis: analysis
-                )
-
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let jsonData = try encoder.encode(payload)
-
-                guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-                    completion(.failure(GeminiServiceError.encodingFailure))
-                    return
-                }
-
-                completion(.success(jsonString))
-            } catch let decodingError as DecodingError {
-                completion(.failure(GeminiServiceError.invalidJSON))
-            } catch {
-                completion(.failure(error))
-            }
-        }.resume()
+        let analysisData = Data(rawJSON.utf8)
+        let analysisPayload = try JSONDecoder().decode(GeminiAnalysisPayload.self, from: analysisData)
+        return analysisPayload.toDomain()
     }
 
     private func buildPrompt(ocrText: String, detections: [Detection]) -> String {
@@ -98,28 +61,27 @@ final class GeminiService {
             .map { "\($0.type) (confidence: \(String(format: "%.2f", $0.confidence)))" }
             .joined(separator: ", ")
 
+        let allowedCategories = SensitiveCategory.allCases
+            .filter { $0 != .unknown }
+            .map { $0.rawValue }
+            .joined(separator: ", ")
+
         return """
-        You are a privacy assistant running entirely on device. You receive sanitized OCR text and detection metadata that indicate potential exposure of personal identity information. Detect any privacy risks present in the text, without inventing numbers or details that are not present. Use the detection metadata as hints only.
+        You are a privacy assistant running on-device. You receive sanitized OCR text and detection metadata that indicate potential exposure of personal identity information. Detect any privacy risks present in the text without fabricating data. Detection metadata is a hint only.
 
         Detections: [\(formattedDetections)]
-        OCR Text: """
+        OCR Text (already sanitized):
         \(ocrText)
+
+        Respond STRICTLY as minified JSON using these keys:
+        - "explanation": concise description of the identified risk.
+        - "risk_level": one of "low", "medium", "high".
+        - "categories": array of objects {"label": string, "confidence": number between 0 and 1}. Labels must be chosen from [\(allowedCategories)].
+        - "key_phrases": array of verbatim fragments from the provided OCR text that demonstrate the risk.
+        - "recommended_actions": array of short mitigation steps.
+
+        Do not add extra keys. Only quote verbatim content from OCR text when referencing sensitive fragments.
         """
-
-        Respond strictly as minified JSON with the following keys:
-        - "explanation": short string describing the risk.
-        - "risk_level": one of "low", "medium", or "high".
-        - "key_phrases": array of strings highlighting risky fragments taken verbatim from the provided text.
-        - "recommended_actions": array of short action items to mitigate exposure.
-
-        Do not include personal identifiers that are not already in the OCR text. Do not add any additional fields.
-        """
-    }
-
-    private static func snippet(from text: String, limit: Int = 200) -> String {
-        guard text.count > limit else { return text }
-        let index = text.index(text.startIndex, offsetBy: limit)
-        return "\(text[..<index])…"
     }
 }
 
@@ -176,27 +138,41 @@ private struct GenerateContentResponse: Codable {
 }
 
 private struct GeminiAnalysisPayload: Codable {
+    struct Category: Codable {
+        let label: String
+        let confidence: Double
+    }
+
     let explanation: String
     let riskLevel: String
     let keyPhrases: [String]
     let recommendedActions: [String]
+    let categories: [Category]
 
     enum CodingKeys: String, CodingKey {
         case explanation
         case riskLevel = "risk_level"
         case keyPhrases = "key_phrases"
         case recommendedActions = "recommended_actions"
+        case categories
     }
-}
 
-private struct GeminiFrontendPayload: Codable {
-    let analysis: GeminiAnalysisPayload
-    let detections: [Detection]
-    let ocrTextSnippet: String
+    func toDomain() -> SensitiveAnalysisResult {
+        let predictions = categories.map { category in
+            SensitiveCategoryPrediction(
+                category: SensitiveCategory.from(label: category.label),
+                confidence: category.confidence
+            )
+        }
 
-    enum CodingKeys: String, CodingKey {
-        case analysis
-        case detections
-        case ocrTextSnippet = "ocr_text_snippet"
+        let risk = SensitiveAnalysisResult.RiskLevel(rawValue: riskLevel.lowercased()) ?? .unknown
+
+        return SensitiveAnalysisResult(
+            explanation: explanation,
+            riskLevel: risk,
+            keyPhrases: keyPhrases,
+            recommendedActions: recommendedActions,
+            categories: predictions
+        )
     }
 }

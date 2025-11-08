@@ -10,23 +10,46 @@ import UIKit
 
 extension DetectionResult {
     static var mockFlagged: DetectionResult {
+        let cardRegion = DetectedRegion(
+            normalizedRect: CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.3),
+            confidence: 0.92,
+            label: "Credit Card"
+        )
+        let ssnRegion = DetectedRegion(
+            normalizedRect: CGRect(x: 0.5, y: 0.6, width: 0.3, height: 0.2),
+            confidence: 0.87,
+            label: "Social Security Number"
+        )
+
         return DetectionResult(
             asset: nil,  // No real asset for previews
             isFlagged: true,
-            detectedRegions: [
-                DetectedRegion(
-                    normalizedRect: CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.3),
-                    confidence: 0.92,
-                    label: "Credit Card"
+            detectedRegions: [cardRegion, ssnRegion],
+            reason: "Contains sensitive information: Credit Card, SSN",
+            ocrSegments: [
+                OCRTextSegment(
+                    regionID: cardRegion.id,
+                    rawText: "4111 1111 1111 1111\nEXP 04/27",
+                    sanitizedText: "•••• •••• •••• 1111\nEXP 04/27"
                 ),
-                DetectedRegion(
-                    normalizedRect: CGRect(x: 0.5, y: 0.6, width: 0.3, height: 0.2),
-                    confidence: 0.87,
-                    label: "Social Security Number"
+                OCRTextSegment(
+                    regionID: ssnRegion.id,
+                    rawText: "SSN: 123-45-6789",
+                    sanitizedText: "SSN: •••-••-6789"
                 )
             ],
-            reason: "Contains sensitive information: Credit Card, SSN",
-            geminiExplanation: "This image contains financial information that could be used for identity theft. The detected credit card shows card numbers and expiration date, while the SSN could be used to access personal accounts.",
+            analysisStatus: .completed,
+            analysis: SensitiveAnalysisResult(
+                explanation: "Credit card and SSN are visible; both expose identity details.",
+                riskLevel: .high,
+                keyPhrases: ["•••• •••• •••• 1111", "SSN: •••-••-6789"],
+                recommendedActions: ["Delete image from shared locations", "Redact card number before sharing"],
+                categories: [
+                    SensitiveCategoryPrediction(category: .creditCard, confidence: 0.97),
+                    SensitiveCategoryPrediction(category: .ssn, confidence: 0.93)
+                ]
+            ),
+            analysisMessage: nil,
             privacyScore: 0.89,
             thumbnail: createMockImage(color: .systemBlue)
         )
@@ -38,7 +61,10 @@ extension DetectionResult {
             isFlagged: false,
             detectedRegions: [],
             reason: "No sensitive content detected",
-            geminiExplanation: nil,
+            ocrSegments: [],
+            analysisStatus: .pending,
+            analysis: nil,
+            analysisMessage: nil,
             privacyScore: nil,
             thumbnail: createMockImage(color: .systemGreen)
         )

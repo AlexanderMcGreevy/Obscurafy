@@ -24,11 +24,12 @@ enum PrivacyRiskExample {
         """
 
         let geminiService = GeminiService(apiKey: "YOUR_GEMINI_API_KEY")
-        geminiService.generateExplanation(ocrText: ocrText, detections: flagResult.detections) { result in
-            switch result {
-            case .success(let explanation):
-                print("Gemini JSON response:\n\(explanation)")
-            case .failure(let error):
+
+        Task {
+            do {
+                let analysis = try await geminiService.generateAnalysis(ocrText: ocrText, detections: flagResult.detections)
+                print("Gemini analysis: \(analysis)")
+            } catch {
                 print("Failed to fetch explanation: \(error)")
             }
         }

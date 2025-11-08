@@ -60,7 +60,8 @@ struct DetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         detectionInfoSection
-                        placeholderSections
+                        ocrSection
+                        analysisSection
                         deleteButton
                     }
                     .padding()
@@ -163,6 +164,19 @@ struct DetailView: View {
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
+            if let message = result.analysisMessage, result.analysisStatus != .completed {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.orange)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
             if !result.detectedRegions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Detected Regions")
@@ -193,28 +207,97 @@ struct DetailView: View {
         }
     }
 
-    private var placeholderSections: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Gemini Explanation Placeholder
-            VStack(alignment: .leading, spacing: 8) {
-                Label("AI Explanation", systemImage: "sparkles")
-                    .font(.headline)
+    private var ocrSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Sanitized OCR", systemImage: "doc.text")
+                .font(.headline)
 
-                if let explanation = result.geminiExplanation {
-                    Text(explanation)
+            if result.ocrSegments.isEmpty {
+                Text("No text extracted from flagged regions")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(result.ocrSegments) { segment in
+                    Text(segment.sanitizedText)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                } else {
-                    Text("No explanation available")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .italic()
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    private var analysisSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("AI Analysis", systemImage: "sparkles")
+                .font(.headline)
+
+            if let analysis = result.analysis {
+                HStack {
+                    Text("Risk Level")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(analysis.riskLevel.rawValue.capitalized)
+                        .fontWeight(.semibold)
+                }
+
+                Text(analysis.explanation)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                if !analysis.categories.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Categories")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+
+                        ForEach(analysis.categories, id: \.self) { prediction in
+                            HStack {
+                                Text(prediction.category.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                Spacer()
+                                Text(String(format: "%.0f%%", prediction.confidence * 100))
+                                    .foregroundColor(.secondary)
+                            }
+                            .font(.caption)
+                        }
+                    }
+                }
+
+                if !analysis.keyPhrases.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Key Phrases")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        ForEach(analysis.keyPhrases, id: \.self) { phrase in
+                            Text("• \(phrase)")
+                                .font(.caption)
+                        }
+                    }
+                }
+
+                if !analysis.recommendedActions.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recommended Actions")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        ForEach(analysis.recommendedActions, id: \.self) { action in
+                            Text("• \(action)")
+                                .font(.caption)
+                        }
+                    }
+                }
+            } else {
+                Text("No AI analysis available yet.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .italic()
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var deleteButton: some View {
