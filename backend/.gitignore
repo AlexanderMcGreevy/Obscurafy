@@ -1,0 +1,34 @@
+# Node
+node_modules/
+
+# Local env / secrets (DO NOT COMMIT .env)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Build / output
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Uploads / temp
+uploads/
+tmp/
+.tmp/
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Misc
+*.pem
