@@ -10,21 +10,22 @@ import Photos
 
 struct ContentView: View {
     private let geminiService: GeminiAnalyzing?
+    private let consentManager: PrivacyConsentManaging
 
     @StateObject private var photoLibraryManager: PhotoLibraryManager
     @StateObject private var deleteBatchManager: DeleteBatchManager
-    @StateObject private var consentManager: PrivacyConsentManager
     @State private var detectionResults: [DetectionResult] = []
     @State private var isScanning = false
     @State private var showPermissionAlert = false
-    @State private var showConsentPrompt = false
-    @State private var highRiskAlert: DetectionResult?
 
-    init(geminiService: GeminiAnalyzing? = ContentView.makeGeminiService()) {
+    init(
+        geminiService: GeminiAnalyzing? = ContentView.makeGeminiService(),
+        consentManager: PrivacyConsentManaging = PrivacyConsentManager()
+    ) {
         self.geminiService = geminiService
+        self.consentManager = consentManager
         _photoLibraryManager = StateObject(wrappedValue: PhotoLibraryManager())
         _deleteBatchManager = StateObject(wrappedValue: DeleteBatchManager())
-        _consentManager = StateObject(wrappedValue: PrivacyConsentManager())
     }
 
     var body: some View {
@@ -50,28 +51,6 @@ struct ContentView: View {
                 ToolbarItem(placement: .primaryAction) {
                     scanButton
                 }
-            }
-            .alert("Allow AI Analysis?", isPresented: $showConsentPrompt) {
-                Button("Allow") {
-                    consentManager.recordConsent(true)
-                    performScan()
-                }
-                Button("Not Now", role: .cancel) {
-                    consentManager.recordConsent(false)
-                    performScan()
-                }
-            } message: {
-                Text("VaultEye can send sanitized text snippets to Gemini to classify sensitive content. No images are shared. Allow this to enable full analysis?")
-            }
-            .alert("High Risk Content", isPresented: Binding(
-                get: { highRiskAlert != nil },
-                set: { if !$0 { highRiskAlert = nil } }
-            ), presenting: highRiskAlert) { _ in
-                Button("OK", role: .cancel) {
-                    highRiskAlert = nil
-                }
-            } message: { result in
-                Text(result.analysis?.explanation ?? "Sensitive content detected")
             }
         }
     }
@@ -225,11 +204,7 @@ struct ContentView: View {
             return
         }
 
-        if !consentManager.hasConsented {
-            showConsentPrompt = true
-        } else {
-            performScan()
-        }
+        performScan()
     }
 
     private func performScan() {
@@ -244,7 +219,6 @@ struct ContentView: View {
             await MainActor.run {
                 detectionResults = results
                 isScanning = false
-                highRiskAlert = results.first { $0.analysis?.riskLevel == .high }
             }
         }
     }

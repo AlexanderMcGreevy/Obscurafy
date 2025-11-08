@@ -208,29 +208,6 @@ struct DetectionResultCard: View {
                         }
                     }
 
-                    if let analysis = result.analysis {
-                        HStack {
-                            Text("Risk Level:")
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(analysis.riskLevel.rawValue.capitalized)
-                                .fontWeight(.semibold)
-                        }
-                    }
-
-                    if let message = result.analysisMessage, result.analysisStatus != .completed {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(.orange)
-                            Text(message)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
                     // Detection types
                     if !result.detectedRegions.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -258,74 +235,15 @@ struct DetectionResultCard: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    // OCR Segments
-                    if !result.ocrSegments.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Sanitized Text", systemImage: "doc.text")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            ForEach(result.ocrSegments) { segment in
-                                Text(segment.sanitizedText)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(8)
-                                    .background(Color(.systemGray5))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
                     // Gemini explanation
-                    if let analysis = result.analysis {
-                        VStack(alignment: .leading, spacing: 8) {
+                    if let explanation = result.geminiExplanation {
+                        VStack(alignment: .leading, spacing: 4) {
                             Label("AI Analysis", systemImage: "sparkles")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            Text(analysis.explanation)
+                            Text(explanation)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-
-                            if !analysis.categories.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Categories")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                    ForEach(analysis.categories, id: \.self) { prediction in
-                                        HStack {
-                                            Text(prediction.category.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
-                                            Spacer()
-                                            Text(String(format: "%.0f%%", prediction.confidence * 100))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .font(.caption)
-                                    }
-                                }
-                            }
-
-                            if !analysis.keyPhrases.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Key Phrases")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                    ForEach(analysis.keyPhrases, id: \.self) { phrase in
-                                        Text("• \(phrase)")
-                                            .font(.caption)
-                                    }
-                                }
-                            }
-
-                            if !analysis.recommendedActions.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Recommended Actions")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                    ForEach(analysis.recommendedActions, id: \.self) { action in
-                                        Text("• \(action)")
-                                            .font(.caption)
-                                    }
-                                }
-                            }
                         }
                         .padding()
                         .background(Color(.systemGray6))
