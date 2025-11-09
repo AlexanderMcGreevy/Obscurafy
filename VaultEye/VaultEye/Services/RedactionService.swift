@@ -66,15 +66,7 @@ class RedactionService: RedactionServiceProtocol {
                     height: region.size.height * imageSize.height
                 )
 
-                // Scale up the box by 2x (expand from center)
-                let scaledRect = CGRect(
-                    x: pixelRect.midX - (pixelRect.width * self.scaleMultiplier) / 2,
-                    y: pixelRect.midY - (pixelRect.height * self.scaleMultiplier) / 2,
-                    width: pixelRect.width * self.scaleMultiplier,
-                    height: pixelRect.height * self.scaleMultiplier
-                )
-
-                yoloBoxes.append(scaledRect)
+                yoloBoxes.append(pixelRect)
             }
             print("  ✅ Converted \(yoloBoxes.count) YOLO region(s) to image coordinates")
         }
@@ -172,15 +164,7 @@ class RedactionService: RedactionServiceProtocol {
                     // Add padding
                     let paddedRect = rect.insetBy(dx: -self.padding, dy: -self.padding)
 
-                    // Scale up the box by 2x (expand from center)
-                    let scaledRect = CGRect(
-                        x: paddedRect.midX - (paddedRect.width * self.scaleMultiplier) / 2,
-                        y: paddedRect.midY - (paddedRect.height * self.scaleMultiplier) / 2,
-                        width: paddedRect.width * self.scaleMultiplier,
-                        height: paddedRect.height * self.scaleMultiplier
-                    )
-
-                    boxes.append(scaledRect)
+                    boxes.append(paddedRect)
                 }
 
                 // Merge overlapping boxes

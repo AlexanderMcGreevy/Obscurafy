@@ -133,7 +133,7 @@ struct ScanScreen: View {
                             .foregroundColor(.blue)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.1))
+                            .background(AppColor.primaryBg)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
@@ -176,7 +176,7 @@ struct ScanScreen: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.red)
+                    .background(AppColor.primary)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -192,7 +192,7 @@ struct ScanScreen: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.blue)
+                    .background(AppColor.primary)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -355,11 +355,11 @@ struct ScanScreen: View {
             }
         }
         .padding()
-        .background(consentManager.hasConsented ? Color.green.opacity(0.05) : Color.orange.opacity(0.05))
+        .background(AppColor.primaryBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(consentManager.hasConsented ? Color.green.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1)
+                .stroke(AppColor.border, lineWidth: 1)
         )
     }
 
@@ -398,12 +398,12 @@ struct ScanScreen: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .foregroundColor(.orange)
+                    .background(AppColor.primaryBg)
+                    .foregroundColor(AppColor.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                            .stroke(AppColor.border, lineWidth: 1)
                     )
                 }
                 .disabled(scanManager.isRunning)

@@ -96,7 +96,7 @@ struct DetailView: View {
                 VStack {
                     Spacer()
                     Rectangle()
-                        .fill(Color.blue)
+                        .fill(AppColor.primary)
                         .frame(height: 4)
                         .opacity(min(1.0, dragOffset / swipeThreshold))
                 }
@@ -469,8 +469,8 @@ struct DetectionOverlay: View {
         let rect = convertedRect
 
         Rectangle()
-            .stroke(Color.red, lineWidth: 3)
-            .background(Color.red.opacity(0.2))
+            .stroke(AppColor.primary, lineWidth: 3)
+            .background(AppColor.primary.opacity(0.2))
             .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
             .overlay(alignment: .topLeading) {
@@ -478,7 +478,7 @@ struct DetectionOverlay: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .padding(4)
-                    .background(Color.red)
+                    .background(AppColor.primary)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .position(x: rect.minX + 40, y: rect.minY + 12)

@@ -62,7 +62,7 @@ struct StatisticsView: View {
                     Circle()
                         .trim(from: 0, to: statsManager.scanCoverage)
                         .stroke(
-                            statsManager.scanCoverage >= 1.0 ? Color.green : Color.blue,
+                            AppColor.primary,
                             style: StrokeStyle(lineWidth: 12, lineCap: .round)
                         )
                         .frame(width: 120, height: 120)
@@ -122,7 +122,7 @@ struct StatisticsView: View {
                         }
                         .padding(.vertical, 4)
                         .padding(.horizontal, 12)
-                        .background(Color.orange.opacity(0.1))
+                        .background(AppColor.primaryBg)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }

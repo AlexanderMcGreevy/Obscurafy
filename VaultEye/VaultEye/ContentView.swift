@@ -47,7 +47,7 @@ struct ContentView: View {
                     resultsList
                 }
             }
-            .navigationTitle("Review Photos")
+            .navigationTitle("Obscurafy")
             .task {
                 // Load photos from background scan results on appear
                 await loadPhotosFromBackgroundScan()
@@ -83,7 +83,7 @@ struct ContentView: View {
             .foregroundColor(.white)
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(Color.red)
+            .background(AppColor.primary)
             .cornerRadius(20)
         }
         .padding(.top, 8)
@@ -234,7 +234,7 @@ struct ContentView: View {
         VStack(spacing: 24) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.green)
+                .foregroundColor(AppColor.primary)
 
             Text("All Photos Reviewed!")
                 .font(.title2)
@@ -253,7 +253,7 @@ struct ContentView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding()
-                    .background(Color.orange.opacity(0.1))
+                    .background(AppColor.primaryBg)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     Button(action: commitDeletions) {
@@ -265,7 +265,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 32)
                         .padding(.vertical, 16)
-                        .background(Color.red)
+                        .background(AppColor.primary)
                         .cornerRadius(12)
                     }
 

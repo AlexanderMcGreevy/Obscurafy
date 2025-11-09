@@ -200,6 +200,7 @@ struct DetectionResultCard: View {
     @State private var analysisResult: SensitiveAnalysisResult?
     @State private var isAnalyzing = false
     @State private var noTextFound = false
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         result: DetectionResult,
@@ -244,6 +245,27 @@ struct DetectionResultCard: View {
 
                     // Details below (all scrollable together)
                     VStack(alignment: .leading, spacing: 16) {
+                        // Risk Level (based on ML confidence)
+                        if !result.detectedRegions.isEmpty {
+                            let avgConfidence = result.detectedRegions.map { $0.confidence }.reduce(0, +) / Float(result.detectedRegions.count)
+                            let riskLevel = riskLevelForConfidence(avgConfidence)
+
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(riskLevel.color)
+                                Text("Risk Level: \(riskLevel.text)")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                                Text("\(Int(avgConfidence * 100))%")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(riskLevel.color.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+
                         // Gemini explanation
                         VStack(alignment: .leading, spacing: 8) {
                             Label("AI Explanation", systemImage: "sparkles")
@@ -315,25 +337,11 @@ struct DetectionResultCard: View {
                             }
                         }
                         .padding()
-                        .background(Color(.systemGray6))
+                        .background(AppColor.adaptiveCardFill(for: colorScheme))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                        // Redaction hint
-                        if result.asset != nil {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Label("Swipe Down to Blur Text", systemImage: "arrow.down")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.blue)
-
-                                Text("Pull down on the card to automatically detect and blur all text in this image")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding()
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
+                       
+                        
 
                         // Deletion queue status
                         if deleteBatchManager.stagedAssetIds.count > 0 {
@@ -348,7 +356,7 @@ struct DetectionResultCard: View {
                                 Spacer()
                             }
                             .padding()
-                            .background(Color.red.opacity(0.1))
+                            .background(AppColor.primary.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                     }
@@ -370,7 +378,7 @@ struct DetectionResultCard: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.blue)
+                        .background(AppColor.primary)
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
@@ -398,7 +406,7 @@ struct DetectionResultCard: View {
                         .foregroundColor(.white)
                 }
                 .padding(32)
-                .background(Color(.systemGray6))
+                .background(AppColor.adaptiveCardFill(for: colorScheme))
                 .cornerRadius(16)
             }
         }
@@ -550,6 +558,17 @@ struct DetectionResultCard: View {
             return .yellow
         default:
             return .blue
+        }
+    }
+
+    private func riskLevelForConfidence(_ confidence: Float) -> (text: String, color: Color) {
+        switch confidence {
+        case 0.8...1.0:
+            return ("High", .red)
+        case 0.5..<0.8:
+            return ("Medium", .orange)
+        default:
+            return ("Low", .yellow)
         }
     }
 
