@@ -31,6 +31,20 @@ class DocumentPatternDetector {
         }
     }
 
+    /// Check if an image contains any readable text
+    func hasText(in image: UIImage) async throws -> Bool {
+        guard let cgImage = image.cgImage else {
+            throw NSError(domain: "DocumentPatternDetector", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get CGImage"])
+        }
+
+        let text = try await extractText(from: cgImage)
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        logger.info("[Pattern] Text detection: \(trimmedText.isEmpty ? "No text found" : "\(trimmedText.count) characters found")")
+
+        return !trimmedText.isEmpty
+    }
+
     /// Analyze text from an image to detect document type
     func detectDocumentType(from image: UIImage) async throws -> DocumentType {
         guard let cgImage = image.cgImage else {

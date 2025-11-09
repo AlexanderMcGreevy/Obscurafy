@@ -20,6 +20,7 @@ final class BackgroundScanManager: ObservableObject {
     @Published var processed: Int = 0
     @Published var isRunning: Bool = false
     @Published var lastCompletionSummary: String?
+    @Published var scanDataVersion: Int = 0  // Increments when scan data is reset
 
     // MARK: - Private State
 
@@ -167,6 +168,29 @@ final class BackgroundScanManager: ObservableObject {
         BGTasks.cancelAllTasks()
     }
 
+    /// Reset all scan data and start fresh
+    func resetScanData() {
+        print("🗑️ Resetting all scan data")
+
+        // Cancel any running scan
+        if isRunning {
+            cancel()
+        }
+
+        // Reset the store (deletes ScanState.json)
+        store.reset()
+
+        // Reset UI state
+        total = 0
+        processed = 0
+        lastCompletionSummary = nil
+
+        // Increment version to notify observers (like ContentView) to clear their data
+        scanDataVersion += 1
+
+        print("✅ Scan data reset complete - version \(scanDataVersion)")
+    }
+
     /// Checkpoint current progress
     func checkpoint() {
         var state = store.loadOrCreate(threshold: 85)
@@ -283,44 +307,61 @@ final class BackgroundScanManager: ObservableObject {
 
         print("🔍 Asset \(assetID.prefix(8))... - Found \(detections.count) YOLO detection(s) at threshold \(threshold)%")
 
+        // If no detections, skip immediately
+        guard !detections.isEmpty else {
+            print("❌ NO MATCH: \(assetID.prefix(8))... - No detections above threshold")
+            return false
+        }
+
         // Log YOLO detections
         for (index, detection) in detections.prefix(3).enumerated() {
             let isSensitive = YOLOService.isSensitive(detection.label) ? "⚠️ SENSITIVE" : "ℹ️"
             print("  \(isSensitive) \(index + 1). \(detection.label) - \(Int(detection.confidence * 100))%")
         }
 
+        // Step 2: Verify the image contains text
+        print("  📝 Verifying text presence...")
+        guard let image = await loadImage(from: asset) else {
+            print("  ⚠️ Failed to load image for text verification")
+            return false
+        }
+
+        var hasText = false
+        do {
+            hasText = try await patternDetector.hasText(in: image)
+        } catch {
+            print("  ⚠️ Text detection failed: \(error.localizedDescription)")
+            return false
+        }
+
+        guard hasText else {
+            print("❌ NO MATCH: \(assetID.prefix(8))... - ML detected content but NO TEXT found (filtered out)")
+            return false
+        }
+
+        print("  ✅ Text confirmed present")
+
         var finalLabel = detections.first?.label ?? "unknown"
         var matchSource = "YOLO"
 
-        // Step 2: If YOLO detected id_card, use text pattern analysis to refine
+        // Step 3: If YOLO detected id_card, use text pattern analysis to refine
         if let topDetection = detections.first, topDetection.label == "id_card" {
             print("  🔎 YOLO detected id_card, running text pattern analysis to refine...")
 
-            // Load the image for pattern detection
-            if let image = await loadImage(from: asset) {
-                do {
-                    let documentType = try await patternDetector.detectDocumentType(from: image)
-                    if documentType != .unknown {
-                        finalLabel = documentType.rawValue
-                        matchSource = "Pattern"
-                        print("  ✨ Pattern detector refined type: \(documentType.displayName)")
-                    }
-                } catch {
-                    print("  ⚠️ Pattern detection failed: \(error.localizedDescription)")
+            do {
+                let documentType = try await patternDetector.detectDocumentType(from: image)
+                if documentType != .unknown {
+                    finalLabel = documentType.rawValue
+                    matchSource = "Pattern"
+                    print("  ✨ Pattern detector refined type: \(documentType.displayName)")
                 }
+            } catch {
+                print("  ⚠️ Pattern detection failed: \(error.localizedDescription)")
             }
         }
 
-        // Match if ANY detection is found
-        let matched = !detections.isEmpty
-
-        if matched {
-            print("✅ MATCHED: \(assetID.prefix(8))... - \(finalLabel) (via \(matchSource))")
-        } else {
-            print("❌ NO MATCH: \(assetID.prefix(8))... - No detections above threshold")
-        }
-
-        return matched
+        print("✅ MATCHED: \(assetID.prefix(8))... - \(finalLabel) (via \(matchSource)) + TEXT VERIFIED")
+        return true
     }
 
     private func loadImage(from asset: PHAsset) async -> UIImage? {

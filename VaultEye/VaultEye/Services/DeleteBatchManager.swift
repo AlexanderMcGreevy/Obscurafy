@@ -31,6 +31,11 @@ final class DeleteBatchManager: ObservableObject {
         stagedAssetIds.contains(assetId)
     }
 
+    /// Clear all staged assets without deleting
+    func clearStagedAssets() {
+        stagedAssetIds.removeAll()
+    }
+
     /// Commit all staged deletions in a single batch operation
     func commit(using resolver: (String) -> PHAsset?) async throws {
         let assets = stagedAssetIds.compactMap { resolver($0) }

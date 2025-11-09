@@ -64,6 +64,12 @@ struct ContentView: View {
                     }
                 }
             }
+            .onChange(of: scanManager.scanDataVersion) { oldValue, newValue in
+                // Clear results when scan data is reset
+                print("🗑️ Scan data reset detected - clearing review results")
+                detectionResults = []
+                deleteBatchManager.clearStagedAssets()
+            }
         }
     }
 

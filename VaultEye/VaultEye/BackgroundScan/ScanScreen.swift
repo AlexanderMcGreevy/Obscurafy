@@ -15,37 +15,47 @@ struct ScanScreen: View {
     @StateObject private var photoScanService = PhotoScanService()
 
     @State private var threshold: Int = 85
+    @State private var showResetConfirmation = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Status Section
-                statusSection
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Status Section
+                    statusSection
 
-                Spacer()
+                    // Progress Section
+                    if scanManager.isRunning {
+                        progressSection
+                    }
 
-                // Progress Section
-                if scanManager.isRunning {
-                    progressSection
+                    // Controls Section
+                    controlsSection
+
+                    // Last completion summary
+                    if let summary = scanManager.lastCompletionSummary {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+
+                    // Reset Button Section
+                    resetSection
                 }
-
-                Spacer()
-
-                // Controls Section
-                controlsSection
-
-                // Last completion summary
-                if let summary = scanManager.lastCompletionSummary {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding()
-                }
+                .padding()
             }
-            .padding()
             .navigationTitle("Background Scan")
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 handleScenePhaseChange(from: oldPhase, to: newPhase)
+            }
+            .alert("Reset Scan Data?", isPresented: $showResetConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    scanManager.resetScanData()
+                }
+            } message: {
+                Text("This will clear all scan history and progress. You'll start from scratch on the next scan. This does not delete any photos.")
             }
         }
     }
@@ -351,6 +361,57 @@ struct ScanScreen: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(consentManager.hasConsented ? Color.green.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1)
         )
+    }
+
+    // MARK: - Reset Section
+
+    private var resetSection: some View {
+        VStack(spacing: 16) {
+            Divider()
+                .padding(.vertical, 8)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .foregroundColor(.orange)
+                        .font(.title2)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reset Scan Data")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text("Clear all scan history and start fresh")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                Button(action: {
+                    showResetConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash.circle.fill")
+                        Text("Reset")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .foregroundColor(.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .disabled(scanManager.isRunning)
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
     }
 
     // MARK: - Scene Phase Handling

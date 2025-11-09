@@ -41,16 +41,35 @@ class PhotoLibraryManager: ObservableObject {
     func loadThumbnail(for asset: PHAsset, targetSize: CGSize) async -> UIImage? {
         return await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
-            options.deliveryMode = .opportunistic
+            // Use highQualityFormat instead of opportunistic to ensure completion is called only once
+            options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
+            options.isSynchronous = false
+
+            var hasResumed = false
+            let lock = NSLock()
 
             PHImageManager.default().requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
-                continuation.resume(returning: image)
+            ) { image, info in
+                lock.lock()
+                defer { lock.unlock() }
+
+                // Only resume once, even if completion is called multiple times
+                guard !hasResumed else { return }
+
+                // Check if this is the final/degraded image
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+
+                // For opportunistic mode, we want the final (non-degraded) image
+                // But if we're using highQualityFormat, we always get the final image
+                if !isDegraded || options.deliveryMode == .highQualityFormat {
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                }
             }
         }
     }
