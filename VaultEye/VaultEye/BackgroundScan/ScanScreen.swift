@@ -6,44 +6,56 @@
 //
 
 import SwiftUI
+internal import Photos
 
 struct ScanScreen: View {
     @EnvironmentObject var scanManager: BackgroundScanManager
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var consentManager = PrivacyConsentManager()
+    @StateObject private var photoScanService = PhotoScanService()
 
     @State private var threshold: Int = 85
+    @State private var showResetConfirmation = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Status Section
-                statusSection
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Status Section
+                    statusSection
 
-                Spacer()
+                    // Progress Section
+                    if scanManager.isRunning {
+                        progressSection
+                    }
 
-                // Progress Section
-                if scanManager.isRunning {
-                    progressSection
+                    // Controls Section
+                    controlsSection
+
+                    // Last completion summary
+                    if let summary = scanManager.lastCompletionSummary {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+
+                    // Reset Button Section
+                    resetSection
                 }
-
-                Spacer()
-
-                // Controls Section
-                controlsSection
-
-                // Last completion summary
-                if let summary = scanManager.lastCompletionSummary {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding()
-                }
+                .padding()
             }
-            .padding()
             .navigationTitle("Background Scan")
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 handleScenePhaseChange(from: oldPhase, to: newPhase)
+            }
+            .alert("Reset Scan Data?", isPresented: $showResetConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    scanManager.resetScanData()
+                }
+            } message: {
+                Text("This will clear all scan history and progress. You'll start from scratch on the next scan. This does not delete any photos.")
             }
         }
     }
@@ -107,17 +119,43 @@ struct ScanScreen: View {
 
     private var controlsSection: some View {
         VStack(spacing: 12) {
-            // Threshold Picker
+            // Detection Confidence Slider
             if !scanManager.isRunning {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Confidence Threshold: \(threshold)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label("Detection Confidence", systemImage: "slider.horizontal.3")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Text("\(photoScanService.confidenceThreshold)%")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
 
-                    Slider(value: Binding(
-                        get: { Double(threshold) },
-                        set: { threshold = Int($0) }
-                    ), in: 0...100, step: 5)
+                    Slider(
+                        value: Binding(
+                            get: { Double(photoScanService.confidenceThreshold) },
+                            set: { photoScanService.confidenceThreshold = Int($0) }
+                        ),
+                        in: 0...100,
+                        step: 1
+                    )
+                    .tint(.blue)
+
+                    HStack {
+                        Text("Lower = More photos flagged")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("Higher = Only confident matches")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -160,6 +198,20 @@ struct ScanScreen: View {
                 }
             }
 
+            // Test Model Button (Debug)
+            #if DEBUG
+            if !scanManager.isRunning {
+                Button(action: testModel) {
+                    HStack {
+                        Image(systemName: "ant.circle")
+                        Text("Test YOLO Model")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.green)
+                }
+            }
+            #endif
+
             // Settings Link
             Link(destination: URL(string: UIApplication.openSettingsURLString)!) {
                 HStack {
@@ -168,6 +220,49 @@ struct ScanScreen: View {
                 }
                 .font(.subheadline)
                 .foregroundColor(.blue)
+            }
+        }
+    }
+
+    // MARK: - Test Model
+
+    private func testModel() {
+        print("[YOLO] Test button tapped - running model test...")
+
+        Task {
+            // Get first photo from library
+            let assets = PhotoAccess.fetchAllImageAssets()
+            guard let firstAssetID = assets.first,
+                  let asset = PhotoAccess.fetchAsset(byLocalIdentifier: firstAssetID) else {
+                print("[YOLO] No photos found in library")
+                return
+            }
+
+            print("[YOLO] Testing with asset: \(asset.localIdentifier)")
+
+            // Run YOLO detection
+            let detections = await YOLOService.shared.detect(
+                asset: asset,
+                threshold01: photoScanService.threshold01
+            )
+
+            // Print results
+            print("[YOLO] ✅ Test complete!")
+            print("[YOLO] Found \(detections.count) detection(s)")
+
+            for (index, detection) in detections.enumerated() {
+                print("[YOLO]   \(index + 1). \(detection.label) - \(Int(detection.confidence * 100))%")
+            }
+
+            if let topDetection = detections.first {
+                // Show toast notification
+                await MainActor.run {
+                    scanManager.lastCompletionSummary = "Test: \(topDetection.label) \(Int(topDetection.confidence * 100))%"
+                }
+            } else {
+                await MainActor.run {
+                    scanManager.lastCompletionSummary = "Test: No detections found"
+                }
             }
         }
     }
@@ -266,6 +361,57 @@ struct ScanScreen: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(consentManager.hasConsented ? Color.green.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1)
         )
+    }
+
+    // MARK: - Reset Section
+
+    private var resetSection: some View {
+        VStack(spacing: 16) {
+            Divider()
+                .padding(.vertical, 8)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .foregroundColor(.orange)
+                        .font(.title2)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reset Scan Data")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text("Clear all scan history and start fresh")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                Button(action: {
+                    showResetConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash.circle.fill")
+                        Text("Reset")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .foregroundColor(.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .disabled(scanManager.isRunning)
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
     }
 
     // MARK: - Scene Phase Handling

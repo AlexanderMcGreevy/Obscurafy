@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		332893B82EC01F33000AB35F /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 332893B72EC01F33000AB35F /* best.mlpackage */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		338AC3A82EBF0017003C1A9D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		332893B72EC01F33000AB35F /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		338AC39A2EBF0013003C1A9D /* VaultEye.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VaultEye.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		338AC3A72EBF0017003C1A9D /* VaultEyeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VaultEyeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		338AC3B12EBF0017003C1A9D /* VaultEyeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VaultEyeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,6 +84,7 @@
 				338AC3AA2EBF0017003C1A9D /* VaultEyeTests */,
 				338AC3B42EBF0017003C1A9D /* VaultEyeUITests */,
 				338AC39B2EBF0013003C1A9D /* Products */,
+				332893B72EC01F33000AB35F /* best.mlpackage */,
 			);
 			sourceTree = "<group>";
 		};
@@ -236,6 +242,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				332893B82EC01F33000AB35F /* best.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,7 +402,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = VaultEye/VaultEye.entitlements;
+				CODE_SIGN_ENTITLEMENTS = VaultEye/VaultEyeDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z87CXCTTK6;

@@ -195,40 +195,41 @@ struct DetectionResultCard: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                // Image at the top (fixed, not scrollable)
-                if let image = fullSizeImage ?? result.thumbnail {
-                    GeometryReader { geometry in
-                        ZStack {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: geometry.size.width)
+            // Everything in one ScrollView
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Image at the top (now scrollable)
+                    if let image = fullSizeImage ?? result.thumbnail {
+                        GeometryReader { geometry in
+                            ZStack {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: geometry.size.width)
 
-                            // Overlay bounding boxes
-                            ForEach(result.detectedRegions) { region in
-                                BoundingBoxOverlay(
-                                    region: region,
-                                    imageSize: image.size,
-                                    frameWidth: geometry.size.width
-                                )
+                                // Overlay bounding boxes
+                                ForEach(result.detectedRegions) { region in
+                                    BoundingBoxOverlay(
+                                        region: region,
+                                        imageSize: image.size,
+                                        frameWidth: geometry.size.width
+                                    )
+                                }
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    }
-                    .frame(height: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.3))
                         .frame(height: 300)
-                        .overlay {
-                            ProgressView()
-                        }
-                }
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(height: 300)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
 
-                // Scrollable details below
-                ScrollView {
+                    // Details below (all scrollable together)
                     VStack(alignment: .leading, spacing: 16) {
                         // Detection info section
                         VStack(alignment: .leading, spacing: 12) {
@@ -263,17 +264,18 @@ struct DetectionResultCard: View {
                                     ForEach(result.detectedRegions) { region in
                                         HStack {
                                             Circle()
-                                                .fill(Color.red)
+                                                .fill(regionColor(for: region.confidence))
                                                 .frame(width: 8, height: 8)
 
-                                            Text(region.label)
+                                            Text("Sensitive Content")
                                                 .font(.subheadline)
 
                                             Spacer()
 
                                             Text("\(String(format: "%.0f%%", region.confidence * 100))")
                                                 .font(.caption)
-                                                .foregroundColor(.secondary)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(regionColor(for: region.confidence))
                                         }
                                     }
                                 }
@@ -583,6 +585,19 @@ struct DetectionResultCard: View {
         }
     }
 
+    private func regionColor(for confidence: Float) -> Color {
+        switch confidence {
+        case 0.8...1.0:
+            return .red
+        case 0.6..<0.8:
+            return .orange
+        case 0.4..<0.6:
+            return .yellow
+        default:
+            return .blue
+        }
+    }
+
     private func loadFullSizeImage() async {
         // Use cached thumbnail if no asset (preview mode)
         if let thumbnail = result.thumbnail {
@@ -610,9 +625,9 @@ struct DetectionResultCard: View {
 
         Task {
             do {
-                let newAsset = try await redactionService.redactAndReplace(asset: asset) { redactedAsset in
-                    // Queue the redacted photo for deletion
-                    deleteBatchManager.stage(redactedAsset.localIdentifier)
+                let newAsset = try await redactionService.redactAndReplace(asset: asset) { originalAsset in
+                    // Queue the ORIGINAL uncensored photo for deletion
+                    deleteBatchManager.stage(originalAsset.localIdentifier)
                 }
 
                 await MainActor.run {
@@ -634,12 +649,6 @@ struct DetectionResultCard: View {
                 await MainActor.run {
                     isRedacting = false
                     redactionError = "No text found in this image"
-                    showError = true
-                }
-            } catch RedactionError.deleteFailed {
-                await MainActor.run {
-                    isRedacting = false
-                    redactionError = "Redacted copy saved, but original could not be deleted. Both copies remain in your library."
                     showError = true
                 }
             } catch {

@@ -9,6 +9,7 @@ import Foundation
 internal import Photos
 import SwiftUI
 import Combine
+import UIKit
 
 @MainActor
 final class BackgroundScanManager: ObservableObject {
@@ -19,14 +20,17 @@ final class BackgroundScanManager: ObservableObject {
     @Published var processed: Int = 0
     @Published var isRunning: Bool = false
     @Published var lastCompletionSummary: String?
+    @Published var scanDataVersion: Int = 0  // Increments when scan data is reset
 
     // MARK: - Private State
 
     private let store = ResultStore()
     private var isCancelled = false
-    private var classifier: ImageClassifier?
+    private let yoloService = YOLOService.shared
+    private let patternDetector = DocumentPatternDetector()
     private var currentTask: Task<Void, Never>?
     private weak var statsManager: StatisticsManager?
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
     private let batchSize = 20 // Checkpoint every N images
     private let maxImageSize = CGSize(width: 1024, height: 1024)
@@ -111,7 +115,8 @@ final class BackgroundScanManager: ObservableObject {
         processScan(state: state)
     }
 
-    /// Resume or start a scan (used by background task)
+    /// Resume an existing scan (used by background task)
+    /// Only resumes scans that were started by the user - never auto-starts new scans
     func resumeOrStartIfNeeded(threshold: Int) async -> Bool {
         guard !isRunning else {
             print("⚠️ Scan already running")
@@ -125,7 +130,7 @@ final class BackgroundScanManager: ObservableObject {
         }
 
         // Load state
-        var state = store.loadOrCreate(threshold: threshold)
+        let state = store.loadOrCreate(threshold: threshold)
 
         // If already completed, nothing to do
         if state.completed {
@@ -133,18 +138,14 @@ final class BackgroundScanManager: ObservableObject {
             return true
         }
 
-        // If no assets, fetch them
+        // If no assets, this means no scan was ever started by the user
+        // Don't auto-start a new scan - only resume existing ones
         if state.assetIDs.isEmpty {
-            let assetIDs = PhotoAccess.fetchAllImageAssets()
-            guard !assetIDs.isEmpty else {
-                print("⚠️ No images found")
-                return false
-            }
-            state.assetIDs = assetIDs
-            state.threshold = threshold
-            store.save(state)
+            print("⚠️ No scan in progress - user must start scan manually")
+            return false
         }
 
+        // Resume the existing scan
         self.total = state.assetIDs.count
         self.processed = state.cursorIndex
         self.isRunning = true
@@ -167,6 +168,29 @@ final class BackgroundScanManager: ObservableObject {
         BGTasks.cancelAllTasks()
     }
 
+    /// Reset all scan data and start fresh
+    func resetScanData() {
+        print("🗑️ Resetting all scan data")
+
+        // Cancel any running scan
+        if isRunning {
+            cancel()
+        }
+
+        // Reset the store (deletes ScanState.json)
+        store.reset()
+
+        // Reset UI state
+        total = 0
+        processed = 0
+        lastCompletionSummary = nil
+
+        // Increment version to notify observers (like ContentView) to clear their data
+        scanDataVersion += 1
+
+        print("✅ Scan data reset complete - version \(scanDataVersion)")
+    }
+
     /// Checkpoint current progress
     func checkpoint() {
         var state = store.loadOrCreate(threshold: 85)
@@ -175,9 +199,33 @@ final class BackgroundScanManager: ObservableObject {
         print("💾 Checkpointed at \(processed)/\(total)")
     }
 
+    // MARK: - Background Task Management
+
+    private func beginBackgroundTask() {
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+            // Task is about to expire - checkpoint and end
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.checkpoint()
+                self.endBackgroundTask()
+            }
+        }
+        print("🔵 Background task started: \(backgroundTaskID.rawValue)")
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        print("🔵 Background task ended: \(backgroundTaskID.rawValue)")
+        backgroundTaskID = .invalid
+    }
+
     // MARK: - Private Processing
 
     private func processScan(state: ScanState) {
+        // Begin background task to continue processing when app goes to background
+        beginBackgroundTask()
+
         Task {
             await processScanAsync(state: state)
         }
@@ -185,22 +233,6 @@ final class BackgroundScanManager: ObservableObject {
 
     private func processScanAsync(state: ScanState) async {
         var currentState = state
-
-        // Initialize classifier
-        if classifier == nil {
-            do {
-                classifier = try ImageClassifier()
-            } catch {
-                print("⚠️ Failed to load Core ML model, using mock classifier")
-                classifier = ImageClassifier.mock()
-            }
-        }
-
-        guard let classifier = classifier else {
-            print("❌ No classifier available")
-            isRunning = false
-            return
-        }
 
         // Process assets from cursor
         let startIndex = currentState.cursorIndex
@@ -212,16 +244,16 @@ final class BackgroundScanManager: ObservableObject {
                 print("🛑 Scan cancelled at \(index)/\(total)")
                 checkpoint()
                 isRunning = false
+                endBackgroundTask()
                 return
             }
 
             let assetID = currentState.assetIDs[index]
 
-            // Process this asset
+            // Process this asset with YOLO
             let didMatch = await processAsset(
                 assetID: assetID,
-                threshold: currentState.threshold,
-                classifier: classifier
+                threshold: currentState.threshold
             )
 
             if didMatch {
@@ -253,41 +285,100 @@ final class BackgroundScanManager: ObservableObject {
 
         // Send notification
         NotificationHelper.shared.sendCompletionNotification(matchedCount: currentState.selectedIDs.count)
+
+        // End background task
+        endBackgroundTask()
     }
 
     private func processAsset(
         assetID: String,
-        threshold: Int,
-        classifier: ImageClassifier
+        threshold: Int
     ) async -> Bool {
         guard let asset = PhotoAccess.fetchAsset(byLocalIdentifier: assetID) else {
             print("⚠️ Asset not found: \(assetID)")
             return false
         }
 
-        do {
-            // Load image with downscaling
-            guard let cgImage = try await PhotoAccess.requestCGImage(
-                for: asset,
-                targetSize: maxImageSize
-            ) else {
-                print("⚠️ Failed to load image: \(assetID)")
-                return false
-            }
+        // Convert threshold (0-100) to 0...1
+        let threshold01 = Float(threshold) / 100.0
 
-            // Classify (mock mode will return 100 for all photos)
-            let confidence = try await classifier.confidence(for: cgImage)
+        // Step 1: Run YOLO detection
+        let detections = await yoloService.detect(asset: asset, threshold01: threshold01)
 
-            let matched = confidence >= threshold
+        print("🔍 Asset \(assetID.prefix(8))... - Found \(detections.count) YOLO detection(s) at threshold \(threshold)%")
 
-            if matched {
-                print("✅ Match: \(assetID) (confidence: \(confidence))")
-            }
-
-            return matched
-        } catch {
-            print("❌ Error processing \(assetID): \(error)")
+        // If no detections, skip immediately
+        guard !detections.isEmpty else {
+            print("❌ NO MATCH: \(assetID.prefix(8))... - No detections above threshold")
             return false
+        }
+
+        // Log YOLO detections
+        for (index, detection) in detections.prefix(3).enumerated() {
+            let isSensitive = YOLOService.isSensitive(detection.label) ? "⚠️ SENSITIVE" : "ℹ️"
+            print("  \(isSensitive) \(index + 1). \(detection.label) - \(Int(detection.confidence * 100))%")
+        }
+
+        // Step 2: Verify the image contains text
+        print("  📝 Verifying text presence...")
+        guard let image = await loadImage(from: asset) else {
+            print("  ⚠️ Failed to load image for text verification")
+            return false
+        }
+
+        var hasText = false
+        do {
+            hasText = try await patternDetector.hasText(in: image)
+        } catch {
+            print("  ⚠️ Text detection failed: \(error.localizedDescription)")
+            return false
+        }
+
+        guard hasText else {
+            print("❌ NO MATCH: \(assetID.prefix(8))... - ML detected content but NO TEXT found (filtered out)")
+            return false
+        }
+
+        print("  ✅ Text confirmed present")
+
+        var finalLabel = detections.first?.label ?? "unknown"
+        var matchSource = "YOLO"
+
+        // Step 3: If YOLO detected id_card, use text pattern analysis to refine
+        if let topDetection = detections.first, topDetection.label == "id_card" {
+            print("  🔎 YOLO detected id_card, running text pattern analysis to refine...")
+
+            do {
+                let documentType = try await patternDetector.detectDocumentType(from: image)
+                if documentType != .unknown {
+                    finalLabel = documentType.rawValue
+                    matchSource = "Pattern"
+                    print("  ✨ Pattern detector refined type: \(documentType.displayName)")
+                }
+            } catch {
+                print("  ⚠️ Pattern detection failed: \(error.localizedDescription)")
+            }
+        }
+
+        print("✅ MATCHED: \(assetID.prefix(8))... - \(finalLabel) (via \(matchSource)) + TEXT VERIFIED")
+        return true
+    }
+
+    private func loadImage(from asset: PHAsset) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = true
+            options.isSynchronous = false
+
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: maxImageSize,
+                contentMode: .aspectFill,
+                options: options
+            ) { image, _ in
+                continuation.resume(returning: image)
+            }
         }
     }
 

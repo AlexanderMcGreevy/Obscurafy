@@ -42,25 +42,27 @@ struct DetailView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                // Image at the top (outside scroll)
-                if let image = fullSizeImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 400)
-                        .clipped()
-                } else {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 300)
-                        .overlay {
-                            ProgressView()
-                        }
-                }
+            // Everything in one ScrollView
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Image at the top (now scrollable)
+                    if let image = fullSizeImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                    } else {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(height: 300)
+                            .frame(maxWidth: .infinity)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
 
-                // Scrollable details below
-                ScrollView {
+                    // Details below (all scrollable together)
                     VStack(alignment: .leading, spacing: 20) {
                         detectionInfoSection
                         placeholderSections
@@ -175,17 +177,18 @@ struct DetailView: View {
                     ForEach(result.detectedRegions) { region in
                         HStack {
                             Circle()
-                                .fill(Color.red)
+                                .fill(regionColor(for: region.confidence))
                                 .frame(width: 8, height: 8)
 
-                            Text(region.label)
+                            Text("Sensitive Content")
                                 .font(.subheadline)
 
                             Spacer()
 
                             Text("\(String(format: "%.0f%%", region.confidence * 100))")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .fontWeight(.semibold)
+                                .foregroundColor(regionColor(for: region.confidence))
                         }
                     }
                 }
@@ -198,6 +201,9 @@ struct DetailView: View {
 
     private var placeholderSections: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // ML Model Risk Assessment
+            mlRiskSection
+
             // Gemini Explanation Placeholder
             VStack(alignment: .leading, spacing: 8) {
                 Label("AI Explanation", systemImage: "sparkles")
@@ -217,6 +223,131 @@ struct DetailView: View {
             .padding()
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var mlRiskSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("ML Model Assessment", systemImage: "chart.bar.fill")
+                .font(.headline)
+
+            if let topRegion = result.detectedRegions.max(by: { $0.confidence < $1.confidence }) {
+                let riskLevel = getRiskLevel(confidence: topRegion.confidence)
+                let riskDescription = getRiskDescription(label: topRegion.label, confidence: topRegion.confidence)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    // Risk Level Badge
+                    HStack {
+                        Text("Risk Level:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Text(riskLevel.text)
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(riskLevel.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    // Confidence Bar
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Confidence:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(String(format: "%.0f%%", topRegion.confidence * 100))")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(riskLevel.color)
+                        }
+
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.2))
+                                    .frame(height: 8)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                                Rectangle()
+                                    .fill(riskLevel.color)
+                                    .frame(width: geometry.size.width * CGFloat(topRegion.confidence), height: 8)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                        .frame(height: 8)
+                    }
+
+                    Divider()
+
+                    // Risk Description
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(riskLevel.color)
+                            .font(.caption)
+
+                        Text(riskDescription)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                Text("No detections available")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .italic()
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func getRiskLevel(confidence: Float) -> (text: String, color: Color) {
+        switch confidence {
+        case 0.8...1.0:
+            return ("High", .red)
+        case 0.6..<0.8:
+            return ("Medium", .orange)
+        case 0.4..<0.6:
+            return ("Low", .yellow)
+        default:
+            return ("Very Low", .blue)
+        }
+    }
+
+    private func regionColor(for confidence: Float) -> Color {
+        switch confidence {
+        case 0.8...1.0:
+            return .red
+        case 0.6..<0.8:
+            return .orange
+        case 0.4..<0.6:
+            return .yellow
+        default:
+            return .blue
+        }
+    }
+
+    private func getRiskDescription(label: String, confidence: Float) -> String {
+        let confidencePercent = Int(confidence * 100)
+
+        // Generic description based on confidence level
+        switch confidence {
+        case 0.8...1.0:
+            return "The model detected sensitive content with very high confidence (\(confidencePercent)%). This photo likely contains private information that should be reviewed carefully."
+        case 0.6..<0.8:
+            return "The model detected potential sensitive content with moderate to high confidence (\(confidencePercent)%). Review this photo to determine if it contains private information."
+        case 0.4..<0.6:
+            return "The model detected possible sensitive content with medium confidence (\(confidencePercent)%). This may be a false positive, but warrants a quick review."
+        default:
+            return "The model flagged this photo with low confidence (\(confidencePercent)%). This is likely a false positive, but you may want to verify."
         }
     }
 
@@ -287,9 +418,9 @@ struct DetailView: View {
 
         Task {
             do {
-                let newAsset = try await redactionService.redactAndReplace(asset: asset) { redactedAsset in
-                    // Queue the redacted photo for deletion
-                    deleteBatchManager.stage(redactedAsset.localIdentifier)
+                let newAsset = try await redactionService.redactAndReplace(asset: asset) { originalAsset in
+                    // Queue the ORIGINAL uncensored photo for deletion
+                    deleteBatchManager.stage(originalAsset.localIdentifier)
                 }
 
                 await MainActor.run {
@@ -311,12 +442,6 @@ struct DetailView: View {
                 await MainActor.run {
                     isRedacting = false
                     redactionError = "No text found in this image"
-                    showError = true
-                }
-            } catch RedactionError.deleteFailed {
-                await MainActor.run {
-                    isRedacting = false
-                    redactionError = "Redacted copy saved, but original could not be deleted. Both copies remain in your library."
                     showError = true
                 }
             } catch {
