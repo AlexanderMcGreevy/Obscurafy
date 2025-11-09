@@ -344,17 +344,30 @@ final class YOLOService {
             allClasses.append((classIdx: maxClassIdx, confidence: maxConf))
 
             // Extract bounding box (normalized x, y, w, h)
-            let x = coordinates[[boxIdx as NSNumber, 0 as NSNumber]].floatValue
-            let y = coordinates[[boxIdx as NSNumber, 1 as NSNumber]].floatValue
-            let w = coordinates[[boxIdx as NSNumber, 2 as NSNumber]].floatValue
-            let h = coordinates[[boxIdx as NSNumber, 3 as NSNumber]].floatValue
+            let centerX = coordinates[[boxIdx as NSNumber, 0 as NSNumber]].floatValue
+            let centerY = coordinates[[boxIdx as NSNumber, 1 as NSNumber]].floatValue
+            let boxWidth = coordinates[[boxIdx as NSNumber, 2 as NSNumber]].floatValue
+            let boxHeight = coordinates[[boxIdx as NSNumber, 3 as NSNumber]].floatValue
 
-            // Convert to CGRect (ensure normalized 0...1)
+            // Ultralytics CoreML export outputs boxes as center-x/center-y/width/height in 0...1
+            var width = CGFloat(max(0, min(1, boxWidth)))
+            var height = CGFloat(max(0, min(1, boxHeight)))
+            var originX = CGFloat(max(0, min(1, centerX))) - width / 2.0
+            var originY = CGFloat(max(0, min(1, centerY))) - height / 2.0
+
+            // Clamp so boxes stay within the normalized image space
+            originX = max(0, originX)
+            originY = max(0, originY)
+            if originX + width > 1 { width = max(0, 1 - originX) }
+            if originY + height > 1 { height = max(0, 1 - originY) }
+
+            guard width > 0, height > 0 else { continue }
+
             let boundingBox = CGRect(
-                x: CGFloat(max(0, min(1, x))),
-                y: CGFloat(max(0, min(1, y))),
-                width: CGFloat(max(0, min(1, w))),
-                height: CGFloat(max(0, min(1, h)))
+                x: originX,
+                y: originY,
+                width: width,
+                height: height
             )
 
             // Use label loader to get the label
