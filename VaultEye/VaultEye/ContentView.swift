@@ -297,7 +297,7 @@ struct ContentView: View {
 
         guard !assetIDs.isEmpty else { return }
 
-        // Convert to DetectionResults
+        // Convert to DetectionResults with YOLO detections
         var results: [DetectionResult] = []
 
         for assetID in assetIDs {
@@ -305,12 +305,24 @@ struct ContentView: View {
                 continue
             }
 
-            // Create detection result with mock data
+            // Run YOLO detection to get regions
+            let detections = await YOLOService.shared.detect(asset: asset, threshold01: 0.5)
+
+            // Convert YOLO detections to DetectedRegions
+            let regions = detections.map { detection in
+                DetectedRegion(
+                    normalizedRect: detection.boundingBox,
+                    confidence: detection.confidence,
+                    label: detection.label
+                )
+            }
+
+            // Create detection result with actual YOLO detections
             let result = DetectionResult(
                 asset: asset,
                 isFlagged: true,
-                detectedRegions: [],
-                reason: "Flagged by background scan"
+                detectedRegions: regions,
+                reason: regions.isEmpty ? "Flagged by background scan" : "Contains \(regions.first?.label ?? "sensitive content")"
             )
 
             results.append(result)

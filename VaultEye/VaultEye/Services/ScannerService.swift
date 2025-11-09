@@ -62,13 +62,13 @@ class ScannerService {
             targetSize: CGSize(width: 200, height: 200)
         )
 
-        let (regions, detections) = await mockDetections()
+        // No mock detections - detections should come from YOLO or other detection service
         let fullImage = await loadFullResolutionImage(for: asset)
         return await analyze(
             image: fullImage,
             asset: asset,
-            regions: regions,
-            detections: detections,
+            regions: [],
+            detections: [],
             thumbnail: thumbnail
         )
     }
@@ -164,18 +164,6 @@ class ScannerService {
 
         let labels = regions.map { $0.label }.joined(separator: ", ")
         return "Contains sensitive information: \(labels)"
-    }
-
-    private func mockDetections() async -> ([DetectedRegion], [Detection]) {
-        // Placeholder detection until CV model integration
-        let region = DetectedRegion(
-            normalizedRect: CGRect(x: 0.2, y: 0.3, width: 0.45, height: 0.3),
-            confidence: 0.9,
-            label: "Credit Card"
-        )
-
-        let detection = Detection(type: "credit_card", confidence: 0.9)
-        return ([region], [detection])
     }
 
     private func loadFullResolutionImage(for asset: PHAsset) async -> UIImage? {

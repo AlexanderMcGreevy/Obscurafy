@@ -89,23 +89,17 @@ final class BGTasks {
     }
 }
 
-// MARK: - Info.plist Requirements
+// MARK: - Xcode Configuration Required
 /*
- Add these keys to your Info.plist:
+ To enable background task scheduling, configure in Xcode:
 
- <key>BGTaskSchedulerPermittedIdentifiers</key>
- <array>
-     <string>com.vaulteye.scan</string>
- </array>
+ Target → Info tab:
+   - Add "Permitted background task scheduler identifiers"
+   - Set value: com.vaulteye.scan
 
- <key>UIBackgroundModes</key>
- <array>
-     <string>processing</string>
- </array>
+ Target → Signing & Capabilities:
+   - Add "Background Modes" capability
+   - Enable: Background fetch + Background processing
 
- <key>NSPhotoLibraryUsageDescription</key>
- <string>VaultEye needs access to your photos to scan for sensitive information</string>
-
- <key>NSUserNotificationsUsageDescription</key>
- <string>VaultEye sends notifications when background scans complete</string>
+ See BACKGROUND_SETUP_INSTRUCTIONS_UPDATED.md for detailed setup.
  */

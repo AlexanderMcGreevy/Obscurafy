@@ -15,12 +15,11 @@ enum RedactionError: Error {
     case ocrFailed
     case renderFailed
     case saveFailed
-    case deleteFailed
     case noTextFound
 }
 
 protocol RedactionServiceProtocol {
-    func redactAndReplace(asset: PHAsset, onRedacted: ((PHAsset) -> Void)?) async throws -> PHAsset
+    func redactAndReplace(asset: PHAsset, onOriginalAsset: ((PHAsset) -> Void)?) async throws -> PHAsset
 }
 
 class RedactionService: RedactionServiceProtocol {
@@ -29,9 +28,9 @@ class RedactionService: RedactionServiceProtocol {
 
     init() {}
 
-    /// Main entry point: detect text, blur it, save new asset, queue for deletion
+    /// Main entry point: detect text, blur it, save new asset, queue original for deletion
     @MainActor
-    func redactAndReplace(asset: PHAsset, onRedacted: ((PHAsset) -> Void)? = nil) async throws -> PHAsset {
+    func redactAndReplace(asset: PHAsset, onOriginalAsset: ((PHAsset) -> Void)? = nil) async throws -> PHAsset {
         print("🔒 Starting redaction process for asset: \(asset.localIdentifier)")
 
         // Save original creation date
@@ -67,23 +66,12 @@ class RedactionService: RedactionServiceProtocol {
         let newAsset = try await saveAsNewAsset(image: redactedImage, creationDate: originalCreationDate)
         print("  ✅ New asset saved: \(newAsset.localIdentifier)")
 
-        // Step 5: Queue redacted photo for deletion via callback
-        print("  Step 5: Queuing redacted photo for deletion...")
-        onRedacted?(newAsset)
-        print("  ✅ Redacted photo queued for batch deletion")
+        // Step 5: Queue ORIGINAL uncensored photo for deletion via callback
+        print("  Step 5: Queuing original uncensored photo for deletion...")
+        onOriginalAsset?(asset)
+        print("  ✅ Original photo queued for batch deletion")
 
-        // Step 6: Delete original (best effort)
-        print("  Step 6: Deleting original asset...")
-        do {
-            try await deleteAsset(asset)
-            print("  ✅ Original asset deleted")
-        } catch {
-            // Non-fatal: new asset exists, just alert user
-            print("  ⚠️ Failed to delete original: \(error.localizedDescription)")
-            throw RedactionError.deleteFailed
-        }
-
-        print("🎉 Redaction complete!")
+        print("🎉 Redaction complete! New redacted photo added, original queued for deletion")
         return newAsset
     }
 
@@ -270,11 +258,5 @@ class RedactionService: RedactionServiceProtocol {
         }
 
         return asset
-    }
-
-    private func deleteAsset(_ asset: PHAsset) async throws {
-        try await PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.deleteAssets([asset] as NSArray)
-        }
     }
 }

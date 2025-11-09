@@ -12,11 +12,9 @@ import UserNotifications
 struct VaultEyeApp: App {
     @StateObject private var scanManager = BackgroundScanManager()
     @StateObject private var statsManager = StatisticsManager()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Register background tasks
-        BGTasks.register(scanManager: BackgroundScanManager())
-
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = NotificationHelper.shared
     }
@@ -34,7 +32,7 @@ struct VaultEyeApp: App {
                 ScanScreen()
                     .environmentObject(scanManager)
                     .tabItem {
-                        Label("Background Scan", systemImage: "magnifyingglass")
+                        Label("Scan", systemImage: "magnifyingglass")
                     }
 
                 StatisticsView()
@@ -46,31 +44,44 @@ struct VaultEyeApp: App {
             .onAppear {
                 // Configure scan manager with stats
                 scanManager.configure(statsManager: statsManager)
+
+                // Register background tasks with the actual scanManager instance
+                BGTasks.register(scanManager: scanManager)
+            }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                switch newPhase {
+                case .background:
+                    print("📱 App entered background - scan will continue")
+                    // Schedule background processing task as backup
+                    if scanManager.isRunning {
+                        BGTasks.scheduleProcessing()
+                    }
+                case .active:
+                    print("📱 App became active")
+                default:
+                    break
+                }
             }
         }
     }
 }
 
-// MARK: - Info.plist Requirements
+// MARK: - Xcode Configuration Required
 /*
- Add these keys to your Info.plist:
+ To enable background scanning, configure these in Xcode:
 
- <key>BGTaskSchedulerPermittedIdentifiers</key>
- <array>
-     <string>com.vaulteye.scan</string>
- </array>
+ 1. Target → Info tab → Add:
+    - Permitted background task scheduler identifiers
+      └─ com.vaulteye.scan
 
- <key>UIBackgroundModes</key>
- <array>
-     <string>processing</string>
- </array>
+ 2. Target → Signing & Capabilities → Add "Background Modes":
+    ✅ Background fetch
+    ✅ Background processing
 
- <key>NSPhotoLibraryUsageDescription</key>
- <string>VaultEye needs access to your photos to scan for sensitive information</string>
+ 3. Verify privacy descriptions exist:
+    - Privacy - Photo Library Usage Description
+    - Privacy - Photo Library Additions Usage Description
+    - Privacy - User Notifications Usage Description
 
- <key>NSPhotoLibraryAddUsageDescription</key>
- <string>VaultEye needs to save redacted images to your photo library</string>
-
- <key>NSUserNotificationsUsageDescription</key>
- <string>VaultEye sends notifications when background scans complete</string>
+ See BACKGROUND_SETUP_INSTRUCTIONS_UPDATED.md for detailed setup guide.
  */
